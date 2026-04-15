@@ -13,7 +13,7 @@ st.title("📦 Gestão de Estoque")
 st.subheader("➕ Cadastrar Novo Produto")
 col1, col2 = st.columns(2)
 nome = col1.text_input("Nome do Produto", key="nome_prod")
-categoria = col2.selectbox("Categoria", ["Charutos", "Cigarros", "Acessórios", "Bebidas", "Outros"], key="cat_prod")
+categoria = col2.selectbox("Categoria", ["Essencia", "Carvão", "Bebidas", "Comidas", "Acessórios" ,"Outros"], key="cat_prod")
 
 col3, col4, col5 = st.columns(3)
 preco = col3.number_input("Preço de Venda (R$)", min_value=0.0, format="%.2f")
