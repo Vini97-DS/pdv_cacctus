@@ -3,6 +3,11 @@ import pandas as pd
 from sqlalchemy import text
 import traceback
 
+# --- SIDEBAR COM LOGO ---
+st.sidebar.image("free_icon_1 (1).svg", width=100)
+st.sidebar.divider()
+
+
 st.write(f"Conectando com o usuário: {st.secrets['connections']['postgresql']['username']}")
 st.set_page_config(page_title="Gestão de Estoque", layout="wide")
 conn = st.connection("postgresql", type="sql")

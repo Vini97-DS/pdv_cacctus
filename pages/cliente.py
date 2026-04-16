@@ -1,6 +1,10 @@
 import streamlit as st
 from sqlalchemy import text
 
+# --- SIDEBAR COM LOGO ---
+st.sidebar.image("free_icon_1 (1).svg", width=100)
+st.sidebar.divider()
+
 st.set_page_config(page_title="Clientes", layout="wide")
 conn = st.connection("postgresql", type="sql")
 
