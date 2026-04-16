@@ -13,6 +13,7 @@ st.title("📦 Gestão de Estoque")
 st.subheader("➕ Cadastrar Novo Produto")
 col1, col2 = st.columns(2)
 nome = col1.text_input("Nome do Produto", key="nome_prod")
+marca = st.text_input("Marca (Ex: Ziggy, Heineken, etc.)")
 categoria = col2.selectbox("Categoria", ["Essencia", "Carvão", "Bebidas", "Comidas", "Acessórios" ,"Outros"], key="cat_prod")
 
 col3, col4, col5 = st.columns(3)
@@ -29,12 +30,13 @@ if st.button("Salvar Produto", type="primary"):
             with conn.session as s:
                 s.execute(
                     text("""
-                        INSERT INTO produtos (nome, categoria, preco_venda, estoque_atual, estoque_minimo)
+                        INSERT INTO produtos (nome, marca, categoria, preco_venda, estoque_atual, estoque_minimo)
                         VALUES (:nome, :categoria, :preco, :estoque, :minimo)
                     """),
                     {
                         "nome": nome,
                         "categoria": categoria,
+                        "marca": marca,
                         "preco": float(preco),
                         "estoque": int(estoque_inicial),
                         "minimo": int(estoque_min)
