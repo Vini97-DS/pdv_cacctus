@@ -66,13 +66,13 @@ try:
         st.subheader("Faturamento Diário")
         if not vendas_dia_df.empty:
             fig_linha = px.line(vendas_dia_df, x='dia', y='total', markers=True, color_discrete_sequence=['#00CC96'])
-            fig_linha.update_layout(margin=dict(l=0, r=0, t=30, b=0), height=250)
+            fig_linha.update_layout(margin=dict(l=0, r=0, t=30, b=0), height=300)
             st.plotly_chart(fig_linha, use_container_width=True)
             
     with col_b:
         st.subheader("Meios de Pagamento")
         if not pagto_df.empty:
-            fig_pizza = px.pie(pagto_df, values='qtd', names='metodo_pagamento', hole=0.3)
+            fig_pizza = px.pie(pagto_df, values='qtd', names='metodo_pagamento', hole=0.3, color_continuous_scale='greens')
             fig_pizza.update_layout(margin=dict(l=0, r=0, t=30, b=0), height=300)
             st.plotly_chart(fig_pizza, use_container_width=True)
 
