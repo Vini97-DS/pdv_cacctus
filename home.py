@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import text
 import plotly.express as px
+# Adicione isso logo após os imports
+st.sidebar.image("free_icon_1 (1).svg", width=100) # Ajuste o width se precisar dele maior ou menor
+st.sidebar.divider()
 
 st.set_page_config(page_title="Dashboard de Gestão", layout="wide")
 conn = st.connection("postgresql", type="sql")
