@@ -3,13 +3,15 @@ import pandas as pd
 from sqlalchemy import text
 import plotly.express as px
 # Adicione isso logo após os imports
-st.sidebar.image("free_icon_1 (1).svg", width=100) # Ajuste o width se precisar dele maior ou menor
-st.sidebar.divider()
 
 st.set_page_config(page_title="Dashboard de Gestão", layout="wide")
 conn = st.connection("postgresql", type="sql")
 
-st.title("Dashboard de Inteligência para o Negócio")
+col_logo, col_tit = st.columns([1, 6])
+with col_logo:
+    st.image("free_icon_1 (1).svg", width=70)
+with col_tit:
+    st.title("Dashboard de Inteligência")
 
 # --- FILTRO DE PERÍODO  ---
 periodo = st.selectbox(
