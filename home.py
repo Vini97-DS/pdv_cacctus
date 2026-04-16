@@ -9,7 +9,7 @@ conn = st.connection("postgresql", type="sql")
 
 col_logo, col_tit = st.columns([1, 6])
 with col_logo:
-    st.image("free_icon_1 (1).svg", width=70)
+    st.image("free_icon_1 (1).svg", width=60)
 with col_tit:
     st.title("Dashboard de Inteligência")
 
