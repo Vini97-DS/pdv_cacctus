@@ -18,7 +18,7 @@ with st.form("novo_cliente", clear_on_submit=True):
             try:
                 with conn.session as s:
                     s.execute(
-                        text("INSERT INTO clientes (nome, telefone, cpf, nascimento) VALUES (:n, :t)"),
+                        text("INSERT INTO clientes (nome, telefone, cpf, nascimento) VALUES (:n, :t, :c, :ns)"),
                         {"n": nome, "t": telefone, "c": cpf, "ns":nascimento}
                     )
                     s.commit()
