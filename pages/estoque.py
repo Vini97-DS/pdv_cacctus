@@ -31,7 +31,7 @@ if st.button("Salvar Produto", type="primary"):
                 s.execute(
                     text("""
                         INSERT INTO produtos (nome, marca, categoria, preco_venda, estoque_atual, estoque_minimo)
-                        VALUES (:nome, :categoria, :preco, :estoque, :minimo)
+                        VALUES (:nome, :marca, :categoria, :preco, :estoque, :minimo)
                     """),
                     {
                         "nome": nome,
