@@ -8,116 +8,93 @@ conn = st.connection("postgresql", type="sql")
 
 st.title("📊 Dashboard de Inteligência")
 
-# --- 1. FILTRO DE PERÍODO (TOP) ---
+# --- FILTRO DE PERÍODO (Mantido conforme o print) ---
 periodo = st.selectbox(
     "Filtrar Período", 
     options=["7 dias", "15 dias", "30 dias", "Todo o histórico"],
-    index=2 # Padrão 30 dias
+    index=3
 )
-
-# Lógica de dias para a Query
 dias_map = {"7 dias": 7, "15 dias": 15, "30 dias": 30, "Todo o histórico": 9999}
 dias = dias_map[periodo]
 
-# --- 2. CARREGAMENTO DE DADOS ---
+# --- 1. CARREGAMENTO DE DADOS ---
 try:
     with conn.session as s:
-        # Métricas Gerais
-        query_metrics = text(f"""
-            SELECT 
-                SUM(valor_bruto) as total_bruto,
-                SUM(valor_liquido) as total_liquido,
-                AVG(valor_bruto) as ticket_medio,
-                COUNT(id) as total_vendas
-            FROM vendas
-            WHERE data_venda >= CURRENT_DATE - INTERVAL '{dias} days'
-        """)
-        metrics_df = pd.read_sql(query_metrics, s.bind)
+        # Métricas (Faturamento, Líquido, etc)
+        metrics_df = pd.read_sql(text(f"SELECT SUM(valor_bruto) as bruto, SUM(valor_liquido) as liquido, AVG(valor_bruto) as ticket, COUNT(id) as vendas FROM vendas WHERE data_venda >= CURRENT_DATE - INTERVAL '{dias} days'"), s.bind)
+        
+        # Alerta de Estoque
+        estoque_df = pd.read_sql(text("SELECT nome, estoque_atual, estoque_minimo FROM produtos"), s.bind)
+        
+        # Vendas Diárias
+        vendas_dia_df = pd.read_sql(text(f"SELECT date_trunc('day', data_venda) as dia, SUM(valor_bruto) as total FROM vendas WHERE data_venda >= CURRENT_DATE - INTERVAL '{dias} days' GROUP BY dia ORDER BY dia"), s.bind)
+        
+        # Meios de Pagamento
+        pagto_df = pd.read_sql(text(f"SELECT metodo_pagamento, COUNT(*) as qtd FROM vendas WHERE data_venda >= CURRENT_DATE - INTERVAL '{dias} days' GROUP BY metodo_pagamento"), s.bind)
+        
+        # Marcas
+        marcas_df = pd.read_sql(text(f"SELECT p.marca, SUM(i.quantidade * i.preco_unitario) as faturamento FROM itens_venda i JOIN produtos p ON i.produto_id = p.id JOIN vendas v ON i.venda_id = v.id WHERE v.data_venda >= CURRENT_DATE - INTERVAL '{dias} days' GROUP BY p.marca ORDER BY faturamento DESC"), s.bind)
+        
+        # Top 5 Produtos
+        top_prod_df = pd.read_sql(text(f"SELECT p.nome, SUM(i.quantidade) as qtd FROM itens_venda i JOIN produtos p ON i.produto_id = p.id JOIN vendas v ON i.venda_id = v.id WHERE v.data_venda >= CURRENT_DATE - INTERVAL '{dias} days' GROUP BY p.nome ORDER BY qtd DESC LIMIT 5"), s.bind)
 
-        # Gráfico: Vendas por Dia
-        query_vendas_dia = text(f"""
-            SELECT date_trunc('day', data_venda) as dia, SUM(valor_bruto) as total
-            FROM vendas
-            WHERE data_venda >= CURRENT_DATE - INTERVAL '{dias} days'
-            GROUP BY dia ORDER BY dia
-        """)
-        vendas_dia_df = pd.read_sql(query_vendas_dia, s.bind)
+# --- 2. MÉTRICAS (IGUAL AO PRINT) ---
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Faturamento", f"R$ {metrics_df['bruto'].iloc[0] or 0:,.2f}")
+    c2.metric("Líquido", f"R$ {metrics_df['liquido'].iloc[0] or 0:,.2f}")
+    c3.metric("Ticket Médio", f"R$ {metrics_df['ticket'].iloc[0] or 0:,.2f}")
+    c4.metric("Vendas", int(metrics_df['vendas'].iloc[0] or 0))
 
-        # Ranking: Produtos Mais Vendidos
-        query_ranking_prod = text(f"""
-            SELECT p.nome, SUM(i.quantidade) as qtd
-            FROM itens_venda i
-            JOIN produtos p ON i.produto_id = p.id
-            JOIN vendas v ON i.venda_id = v.id
-            WHERE v.data_venda >= CURRENT_DATE - INTERVAL '{dias} days'
-            GROUP BY p.nome ORDER BY qtd DESC LIMIT 10
-        """)
-        ranking_prod_df = pd.read_sql(query_ranking_prod, s.bind)
+# --- 3. ALERTA DE ESTOQUE (BANNER DINÂMICO) ---
+    st.write("") # Espaçamento
+    itens_zerados = estoque_df[estoque_df['estoque_atual'] <= 0]
+    itens_atencao = estoque_df[(estoque_df['estoque_atual'] > 0) & (estoque_df['estoque_atual'] <= estoque_df['estoque_minimo'])]
 
-        # Ranking: Marcas
-        query_marcas = text(f"""
-            SELECT p.marca, SUM(i.quantidade * i.preco_unitario) as faturamento
-            FROM itens_venda i
-            JOIN produtos p ON i.produto_id = p.id
-            JOIN vendas v ON i.venda_id = v.id
-            WHERE v.data_venda >= CURRENT_DATE - INTERVAL '{dias} days'
-            GROUP BY p.marca ORDER BY faturamento DESC
-        """)
-        df_marcas = pd.read_sql(query_marcas, s.bind)
-
-        # Alerta de Estoque (Sempre mostra independente da data)
-        query_estoque = text("SELECT nome, estoque_atual, estoque_minimo FROM produtos WHERE estoque_atual <= estoque_minimo")
-        estoque_alerta_df = pd.read_sql(query_estoque, s.bind)
-
-# --- 3. EXIBIÇÃO ---
-    col1, col2, col3, col4 = st.columns(4)
-    bruto = metrics_df['total_bruto'].iloc[0] or 0
-    liquido = metrics_df['total_liquido'].iloc[0] or 0
-    t_medio = metrics_df['ticket_medio'].iloc[0] or 0
-    v_qtd = metrics_df['total_vendas'].iloc[0] or 0
-
-    col1.metric("Faturamento", f"R$ {bruto:,.2f}")
-    col2.metric("Líquido", f"R$ {liquido:,.2f}")
-    col3.metric("Ticket Médio", f"R$ {t_medio:,.2f}")
-    col4.metric("Vendas", int(v_qtd))
+    if not itens_zerados.empty:
+        st.error(f"🔴 **ESTOQUE ZERADO:** {', '.join(itens_zerados['nome'].tolist())}")
+    elif not itens_atencao.empty:
+        st.warning(f"🟡 **ATENÇÃO (Reposição):** {', '.join(itens_atencao['nome'].tolist())}")
+    else:
+        st.success("🟢 **TUDO OK:** Todos os produtos com estoque saudável.")
 
     st.divider()
 
-    # Linha 1 de Gráficos: Vendas no Tempo e Alerta
-    c1, c2 = st.columns([2, 1])
+# --- 4. LINHA: FATURAMENTO DIÁRIO + MEIOS DE PAGAMENTO ---
+    col_a, col_b = st.columns([2, 1])
     
-    with c1:
+    with col_a:
         st.subheader("📈 Faturamento Diário")
         if not vendas_dia_df.empty:
-            fig_vendas = px.line(vendas_dia_df, x='dia', y='total', markers=True, color_discrete_sequence=['#00CC96'])
-            st.plotly_chart(fig_vendas, use_container_width=True)
-        else:
-            st.info("Sem vendas no período.")
-
-    with c2:
-        st.subheader("⚠️ Estoque Crítico")
-        if not estoque_alerta_df.empty:
-            st.dataframe(estoque_alerta_df, hide_index=True)
-        else:
-            st.success("Estoque em dia!")
+            fig_linha = px.line(vendas_dia_df, x='dia', y='total', markers=True, color_discrete_sequence=['#00CC96'])
+            fig_linha.update_layout(margin=dict(l=0, r=0, t=30, b=0), height=300)
+            st.plotly_chart(fig_linha, use_container_width=True)
+            
+    with col_b:
+        st.subheader("💳 Meios de Pagamento")
+        if not pagto_df.empty:
+            fig_pizza = px.pie(pagto_df, values='qtd', names='metodo_pagamento', hole=0.3)
+            fig_pizza.update_layout(margin=dict(l=0, r=0, t=30, b=0), height=300)
+            st.plotly_chart(fig_pizza, use_container_width=True)
 
     st.divider()
 
-    # Linha 2 de Gráficos: Produtos e Marcas
-    c3, c4 = st.columns(2)
+# --- 5. LINHA: MARCAS + TOP 5 PRODUTOS ---
+    col_c, col_d = st.columns([2, 1])
 
-    with c3:
-        st.subheader("🏆 Top 10 Produtos")
-        if not ranking_prod_df.empty:
-            fig_rank = px.bar(ranking_prod_df, x='qtd', y='nome', orientation='h', color='qtd', color_continuous_scale='Reds')
-            st.plotly_chart(fig_rank, use_container_width=True)
-
-    with c4:
+    with col_c:
         st.subheader("🏷️ Faturamento por Marca")
-        if not df_marcas.empty:
-            df_marcas['marca'] = df_marcas['marca'].fillna('Sem Marca')
-            fig_marca = px.pie(df_marcas, values='faturamento', names='marca', hole=0.4)
-            st.plotly_chart(fig_marca, use_container_width=True)
+        if not marcas_df.empty:
+            marcas_df['marca'] = marcas_df['marca'].fillna('Sem Marca')
+            fig_marcas = px.bar(marcas_df, x='marca', y='faturamento', color='faturamento', color_continuous_scale='Blues')
+            fig_marcas.update_layout(margin=dict(l=0, r=0, t=30, b=0), height=350)
+            st.plotly_chart(fig_marcas, use_container_width=True)
+
+    with col_d:
+        st.subheader("🏆 Top 5 Produtos")
+        if not top_prod_df.empty:
+            fig_top = px.bar(top_prod_df, x='qtd', y='nome', orientation='h', color_discrete_sequence=['#EF553B'])
+            fig_top.update_layout(margin=dict(l=0, r=0, t=30, b=0), height=350, yaxis={'categoryorder':'total ascending'})
+            st.plotly_chart(fig_top, use_container_width=True)
 
 except Exception as e:
-    st.error(f"Erro no Dashboard: {e}")
+    st.error(f"Erro ao carregar Dashboard: {e}")
