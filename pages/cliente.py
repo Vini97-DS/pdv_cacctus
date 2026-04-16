@@ -10,7 +10,7 @@ with st.form("novo_cliente", clear_on_submit=True):
     col1, col2, col3, col4 = st.columns(4)
     nome = col1.text_input("Nome Completo")
     telefone = col2.text_input("WhatsApp (com DDD)")
-    cpf = col3.text_input("CPF cliente")
+    cpf = col3.text_input("CPF Cliente")
     nascimento = col4.text_input("Data de Nascimento")
 
     if st.form_submit_button("Cadastrar Cliente", width='stretch'):
