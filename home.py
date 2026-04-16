@@ -66,7 +66,7 @@ try:
         st.subheader("Faturamento Diário")
         if not vendas_dia_df.empty:
             fig_linha = px.line(vendas_dia_df, x='dia', y='total', markers=True, color_discrete_sequence=['#00CC96'])
-            fig_linha.update_layout(margin=dict(l=0, r=0, t=30, b=0), height=280)
+            fig_linha.update_layout(margin=dict(l=0, r=0, t=30, b=0), height=250)
             st.plotly_chart(fig_linha, use_container_width=True)
             
     with col_b:
@@ -78,7 +78,7 @@ try:
 
     st.divider()
 
-# --- 5. LINHA: MARCAS + TOP 5 PRODUTOS ---
+# --- 5. LINHA: MARCAS + RANKING ---
     col_c, col_d = st.columns([2, 1])
 
     with col_c:
