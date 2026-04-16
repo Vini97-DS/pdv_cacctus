@@ -73,7 +73,7 @@ try:
     # Cria duas colunas internas: uma pequena para a imagem e outra para o texto
         col_icon, col_txt = st.columns([1, 5])
     with col_icon:
-        st.image("/Users/vinicius.araujo/Desktop/BI-Course - FGV/pdv_cacctus/free_icon_1.svg", width=40)
+        st.image("free_icon_1.svg", width=40)
     with col_txt:
         st.subheader("Meios de Pagamento")
     
