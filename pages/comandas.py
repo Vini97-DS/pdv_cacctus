@@ -5,6 +5,10 @@ from sqlalchemy import text
 st.set_page_config(page_title="Gestão de Comandas", layout="wide")
 conn = st.connection("postgresql", type="sql")
 
+# --- SIDEBAR COM LOGO ---
+st.sidebar.image("free_icon_1 (1).svg", width=100)
+st.sidebar.divider()
+
 st.title("📑 Gestão de Comandas")
 
 tab1, tab2 = st.tabs(["Abrir Nova", "Comandas Ativas"])
@@ -69,9 +73,10 @@ with tab2:
                     # --- LISTAGEM DO CONSUMO ATUAL ---
                     st.divider()
                     with conn.session as s:
+                        # Query agora traz o ID da linha para podermos excluir especificamente
                         itens_consumidos = pd.read_sql(
                             text("""
-                                SELECT i.produto_id, p.nome, i.quantidade, i.preco_unitario, (i.quantidade * i.preco_unitario) as subtotal
+                                SELECT i.id as item_id, i.produto_id, p.nome, i.quantidade, i.preco_unitario, (i.quantidade * i.preco_unitario) as subtotal
                                 FROM itens_comanda i
                                 JOIN produtos p ON i.produto_id = p.id
                                 WHERE i.comanda_id = :cid
@@ -80,7 +85,23 @@ with tab2:
                         )
                     
                     if not itens_consumidos.empty:
-                        st.dataframe(itens_consumidos.drop(columns=['produto_id']), width='stretch', hide_index=True)
+                        # Exibição visual com botão de excluir por linha
+                        for _, row in itens_consumidos.iterrows():
+                            col_item, col_excluir = st.columns([4, 1])
+                            col_item.write(f"{row['quantidade']}x {row['nome']} - R$ {row['subtotal']:.2f}")
+                            
+                            # Confirmação de exclusão Sim/Não
+                            with col_excluir.popover("🗑️", help="Excluir este item"):
+                                st.warning("Deseja excluir?")
+                                if st.button("Sim, excluir", key=f"del_{row['item_id']}", type="primary"):
+                                    try:
+                                        with conn.session as s:
+                                            s.execute(text("DELETE FROM itens_comanda WHERE id = :id"), {"id": row['item_id']})
+                                            s.commit()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Erro: {e}")
+
                         total_conta = itens_consumidos['subtotal'].sum()
                         st.subheader(f"Total: R$ {total_conta:.2f}")
                         
@@ -90,14 +111,12 @@ with tab2:
                             
                             if st.button("Confirmar Pagamento", key=f"conf_{comanda['id']}", type="primary", width='stretch'):
                                 try:
-                                    # CONVERSÃO PARA FLOAT PURO (Resolve o erro np.float64)
                                     valor_bruto_puro = float(total_conta)
                                     taxas_map = {"Dinheiro": 0.0, "Pix": 0.0, "Débito": 0.019, "Crédito": 0.045}
                                     v_taxa = float(valor_bruto_puro * taxas_map[metodo_pagto])
                                     v_liq = float(valor_bruto_puro - v_taxa)
 
                                     with conn.session as s:
-                                        # 1. Criar registro na tabela Vendas
                                         res = s.execute(
                                             text("""
                                                 INSERT INTO vendas (valor_bruto, metodo_pagamento, taxa_maquininha, valor_liquido)
@@ -108,7 +127,6 @@ with tab2:
                                         )
                                         nova_venda_id = res.fetchone()[0]
 
-                                        # 2. Mover itens para itens_venda (Cópia direta no SQL)
                                         s.execute(
                                             text("""
                                                 INSERT INTO itens_venda (venda_id, produto_id, quantidade, preco_unitario)
@@ -118,7 +136,6 @@ with tab2:
                                             {"v_id": nova_venda_id, "c_id": comanda['id']}
                                         )
 
-                                        # 3. Baixar Estoque dos produtos consumidos
                                         s.execute(
                                             text("""
                                                 UPDATE produtos 
@@ -129,7 +146,6 @@ with tab2:
                                             {"c_id": comanda['id']}
                                         )
 
-                                        # 4. Marcar comanda como Fechada
                                         s.execute(
                                             text("UPDATE comandas SET status = 'Fechada' WHERE id = :c_id"),
                                             {"c_id": comanda['id']}
