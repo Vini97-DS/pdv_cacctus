@@ -85,7 +85,7 @@ try:
         st.subheader("Faturamento por Marca")
         if not marcas_df.empty:
             marcas_df['marca'] = marcas_df['marca'].fillna('Sem Marca')
-            fig_marcas = px.bar(marcas_df, x='marca', y='faturamento', color='faturamento', color_continuous_scale='Green')
+            fig_marcas = px.bar(marcas_df, x='marca', y='faturamento', color='faturamento', color_continuous_scale='greens')
             fig_marcas.update_layout(margin=dict(l=0, r=0, t=30, b=0), height=300)
             st.plotly_chart(fig_marcas, use_container_width=True)
 
