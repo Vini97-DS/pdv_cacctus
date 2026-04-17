@@ -14,52 +14,58 @@ st.title("📦 Inventário e Preços")
 # --- 1. TABELA DE PRODUTOS ---
 try:
     with conn.session as s:
-        # Puxamos o essencial para o operacional
+        # Puxamos apenas o necessário para a visualização operacional
         df = pd.read_sql(text("""
-            SELECT id, nome, marca, categoria, estoque_atual, estoque_minimo, preco_venda, fator_conversao 
+            SELECT id, nome, marca, categoria, estoque_atual, estoque_minimo, preco_venda 
             FROM produtos ORDER BY nome ASC
         """), s.bind)
     
     if not df.empty:
-        # Destacamos o que está acabando
+        # Indicadores de Estoque Baixo
         estoque_baixo = df[df['estoque_atual'] <= df['estoque_minimo']]
         if not estoque_baixo.empty:
-            st.warning(f"⚠️ **Atenção:** {len(estoque_baixo)} itens estão com estoque baixo ou zerado!")
+            st.error(f"🚨 **Atenção:** {len(estoque_baixo)} itens abaixo do nível mínimo!")
 
-        # Tabela formatada
+        # Tabela formatada para o usuário
         st.dataframe(
-            df[['nome', 'marca', 'categoria', 'estoque_atual', 'preco_venda', 'fator_conversao']], 
+            df[['nome', 'marca', 'categoria', 'estoque_atual', 'preco_venda']], 
             use_container_width=True, 
-            hide_index=True
+            hide_index=True,
+            column_config={
+                "nome": "Produto",
+                "marca": "Marca",
+                "categoria": "Categoria",
+                "estoque_atual": "Qtd em Estoque",
+                "preco_venda": st.column_config.NumberColumn("Preço de Venda", format="R$ %.2f")
+            }
         )
     else:
-        st.info("Nenhum produto cadastrado. Vá ao Financeiro para realizar a primeira compra.")
+        st.info("Nenhum produto cadastrado. Realize uma compra na aba Financeiro.")
 except Exception as e:
     st.error(f"Erro ao carregar inventário: {e}")
 
 st.divider()
 
 # --- 2. ÁREA DE AJUSTE RÁPIDO ---
-with st.expander("🛠️ Ajustar Preços ou Fator de Conversão"):
+with st.expander("🛠️ Ajustar Preço de Venda ou Estoque Mínimo"):
     if not df.empty:
-        prod_edit = st.selectbox("Selecione o produto para editar", df['nome'].tolist())
+        prod_edit = st.selectbox("Selecione o produto", df['nome'].tolist())
         detalhes = df[df['nome'] == prod_edit].iloc[0]
         
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         novo_preco = col1.number_input("Novo Preço de Venda (R$)", value=float(detalhes['preco_venda']), step=0.5)
-        novo_fator = col2.number_input("Fator de Conversão (Qtd por Caixa)", value=int(detalhes['fator_conversao']), min_value=1)
-        novo_minimo = col3.number_input("Estoque Mínimo", value=int(detalhes['estoque_minimo']), min_value=0)
+        novo_minimo = col2.number_input("Alerta de Estoque Mínimo", value=int(detalhes['estoque_minimo']), min_value=0)
         
-        if st.button("Salvar Alterações", type="primary"):
+        if st.button("Atualizar Produto", type="primary", use_container_width=True):
             try:
                 with conn.session as s:
                     s.execute(text("""
                         UPDATE produtos 
-                        SET preco_venda = :pv, fator_conversao = :fc, estoque_minimo = :em 
+                        SET preco_venda = :pv, estoque_minimo = :em 
                         WHERE id = :id
-                    """), {"pv": novo_preco, "fc": novo_fator, "em": novo_minimo, "id": detalhes['id']})
+                    """), {"pv": novo_preco, "em": novo_minimo, "id": detalhes['id']})
                     s.commit()
-                st.success("Produto atualizado!")
+                st.success(f"Alterações em '{prod_edit}' salvas!")
                 st.rerun()
             except Exception as e:
                 st.error(f"Erro ao salvar: {e}")
