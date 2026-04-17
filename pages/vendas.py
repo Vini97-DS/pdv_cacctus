@@ -71,11 +71,11 @@ if st.session_state.carrinho:
 
     with col_resumo:
         st.subheader("Finalização")
-        total_venda = df_carrinho['subtotal'].sum()
+        # Conversão explícita para float nativo do Python para evitar erro de np.float64
+        total_venda = float(df_carrinho['subtotal'].sum())
         st.write(f"### Total: R$ {total_venda:.2f}")
         
         # --- CAMPOS EXTRAS (VIP) ---
-        # Seletor de Cliente adicionado aqui
         cliente_opcoes = ["Nenhum"] + clientes_df['nome'].tolist()
         cliente_sel = st.selectbox("Vincular Cliente (Opcional)", cliente_opcoes)
         
@@ -88,7 +88,7 @@ if st.session_state.carrinho:
         
         if st.button("Confirmar e Finalizar", type="primary", use_container_width=True):
             try:
-                # Lógica de taxas (usando a sua padrão)
+                # Lógica de taxas com conversão para float nativo
                 taxas_map = {"Dinheiro": 0.0, "Pix": 0.0, "Débito": 0.019, "Crédito": 0.045}
                 v_taxa = float(total_venda * taxas_map[metodo])
                 v_liq = float(total_venda - v_taxa)
@@ -116,11 +116,11 @@ if st.session_state.carrinho:
                     for item in st.session_state.carrinho:
                         s.execute(
                             text("INSERT INTO itens_venda (venda_id, produto_id, quantidade, preco_unitario) VALUES (:v, :p, :q, :pr)"),
-                            {"v": venda_id, "p": item['id'], "q": item['qtd'], "pr": item['preco']}
+                            {"v": venda_id, "p": int(item['id']), "q": int(item['qtd']), "pr": float(item['preco'])}
                         )
                         s.execute(
                             text("UPDATE produtos SET estoque_atual = estoque_atual - :q WHERE id = :p"),
-                            {"q": item['qtd'], "p": item['id']}
+                            {"q": int(item['qtd']), "p": int(item['id'])}
                         )
                     
                     s.commit()
