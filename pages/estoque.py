@@ -3,13 +3,14 @@ import pandas as pd
 from sqlalchemy import text
 import traceback
 
+# --- 1. CONFIGURAÇÃO (DEVE SER A PRIMEIRA LINHA STREAMLIT) ---
+st.set_page_config(page_title="Gestão de Estoque", layout="wide")
+
 # --- SIDEBAR COM LOGO ---
 st.sidebar.image("free_icon_1 (1).svg", width=100)
 st.sidebar.divider()
 
-
-st.write(f"Conectando com o usuário: {st.secrets['connections']['postgresql']['username']}")
-st.set_page_config(page_title="Gestão de Estoque", layout="wide")
+# Conexão
 conn = st.connection("postgresql", type="sql")
 
 st.title("📦 Gestão de Estoque")
@@ -18,39 +19,38 @@ st.title("📦 Gestão de Estoque")
 st.subheader("➕ Cadastrar Novo Produto")
 col1, col2 = st.columns(2)
 nome = col1.text_input("Nome do Produto", key="nome_prod")
-marca = st.text_input("Marca (Ex: Ziggy, Heineken, etc.)")
-categoria = col2.selectbox("Categoria", ["Essencia", "Carvão", "Bebidas", "Comidas", "Acessórios" ,"Outros"], key="cat_prod")
+marca = col2.text_input("Marca (Ex: Ziggy, Heineken, etc.)") # Movido para coluna ao lado do nome
+categoria = st.selectbox("Categoria", ["Essencia", "Carvão", "Bebidas", "Comidas", "Acessórios" ,"Outros"], key="cat_prod")
 
-col3, col4, col5 = st.columns(3)
-preco = col3.number_input("Preço de Venda (R$)", min_value=0.0, format="%.2f")
-estoque_inicial = col4.number_input("Qtd Inicial", min_value=0)
-estoque_min = col5.number_input("Mínimo", min_value=1, value=5)
+# Adicionada coluna para o Preço de Custo (Ação 1)
+col3, col4, col5, col6 = st.columns(4)
+preco_custo = col3.number_input("Preço de Custo (R$)", min_value=0.0, format="%.2f")
+preco_venda = col4.number_input("Preço de Venda (R$)", min_value=0.0, format="%.2f")
+estoque_inicial = col5.number_input("Qtd Inicial", min_value=0)
+estoque_min = col6.number_input("Mínimo", min_value=1, value=5)
 
 if st.button("Salvar Produto", type="primary"):
     if nome:
         try:
-            print(f">>> Tentando salvar: {nome}")
-            
-            # A correção: Usar a sessão (s) para executar o comando
             with conn.session as s:
                 s.execute(
                     text("""
-                        INSERT INTO produtos (nome, marca, categoria, preco_venda, estoque_atual, estoque_minimo)
-                        VALUES (:nome, :marca, :categoria, :preco, :estoque, :minimo)
+                        INSERT INTO produtos (nome, marca, categoria, preco_custo, preco_venda, estoque_atual, estoque_minimo)
+                        VALUES (:nome, :marca, :categoria, :custo, :preco, :estoque, :minimo)
                     """),
                     {
                         "nome": nome,
                         "categoria": categoria,
                         "marca": marca,
-                        "preco": float(preco),
+                        "custo": float(preco_custo), # Novo campo enviado ao banco
+                        "preco": float(preco_venda),
                         "estoque": int(estoque_inicial),
                         "minimo": int(estoque_min)
                     }
                 )
-                s.commit() # Importante para gravar no banco
+                s.commit()
             
             st.success(f"✅ '{nome}' salvo com sucesso!")
-            print(">>> Sucesso no banco!")
             st.rerun()
             
         except Exception as e:
@@ -64,9 +64,9 @@ st.divider()
 # --- 2. LISTAGEM ---
 st.subheader("📋 Produtos em Inventário")
 try:
-    # Busca direta via sessão para evitar o "Running" infinito
     with conn.session as s:
-        df = pd.read_sql(text("SELECT nome, categoria, preco_venda, estoque_atual FROM produtos ORDER BY nome ASC"), s.bind)
+        # Query atualizada para mostrar marca e custo na tabela
+        df = pd.read_sql(text("SELECT nome, marca, categoria, preco_custo, preco_venda, estoque_atual FROM produtos ORDER BY nome ASC"), s.bind)
     
     if not df.empty:
         st.dataframe(df, use_container_width=True, hide_index=True)
