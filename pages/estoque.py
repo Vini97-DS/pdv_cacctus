@@ -1,76 +1,65 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy import text
-import traceback
 
-# --- 1. CONFIGURAÇÃO (DEVE SER A PRIMEIRA LINHA STREAMLIT) ---
 st.set_page_config(page_title="Gestão de Estoque", layout="wide")
+conn = st.connection("postgresql", type="sql")
 
 # --- SIDEBAR COM LOGO ---
 st.sidebar.image("free_icon_1 (1).svg", width=100)
 st.sidebar.divider()
 
-# Conexão
-conn = st.connection("postgresql", type="sql")
+st.title("📦 Inventário e Preços")
 
-st.title("📦 Gestão de Estoque")
+# --- 1. TABELA DE PRODUTOS ---
+try:
+    with conn.session as s:
+        # Puxamos o essencial para o operacional
+        df = pd.read_sql(text("""
+            SELECT id, nome, marca, categoria, estoque_atual, estoque_minimo, preco_venda, fator_conversao 
+            FROM produtos ORDER BY nome ASC
+        """), s.bind)
+    
+    if not df.empty:
+        # Destacamos o que está acabando
+        estoque_baixo = df[df['estoque_atual'] <= df['estoque_minimo']]
+        if not estoque_baixo.empty:
+            st.warning(f"⚠️ **Atenção:** {len(estoque_baixo)} itens estão com estoque baixo ou zerado!")
 
-# --- 1. CADASTRO SIMPLIFICADO ---
-st.subheader("➕ Cadastrar Novo Produto")
-col1, col2 = st.columns(2)
-nome = col1.text_input("Nome do Produto", key="nome_prod")
-marca = col2.text_input("Marca (Ex: Ziggy, Heineken, etc.)") # Movido para coluna ao lado do nome
-categoria = st.selectbox("Categoria", ["Essencia", "Carvão", "Bebidas", "Comidas", "Acessórios" ,"Outros"], key="cat_prod")
-
-# Adicionada coluna para o Preço de Custo (Ação 1)
-col3, col4, col5, col6 = st.columns(4)
-preco_custo = col3.number_input("Preço de Custo (R$)", min_value=0.0, format="%.2f")
-preco_venda = col4.number_input("Preço de Venda (R$)", min_value=0.0, format="%.2f")
-estoque_inicial = col5.number_input("Qtd Inicial", min_value=0)
-estoque_min = col6.number_input("Mínimo", min_value=1, value=5)
-
-if st.button("Salvar Produto", type="primary"):
-    if nome:
-        try:
-            with conn.session as s:
-                s.execute(
-                    text("""
-                        INSERT INTO produtos (nome, marca, categoria, preco_custo, preco_venda, estoque_atual, estoque_minimo)
-                        VALUES (:nome, :marca, :categoria, :custo, :preco, :estoque, :minimo)
-                    """),
-                    {
-                        "nome": nome,
-                        "categoria": categoria,
-                        "marca": marca,
-                        "custo": float(preco_custo), # Novo campo enviado ao banco
-                        "preco": float(preco_venda),
-                        "estoque": int(estoque_inicial),
-                        "minimo": int(estoque_min)
-                    }
-                )
-                s.commit()
-            
-            st.success(f"✅ '{nome}' salvo com sucesso!")
-            st.rerun()
-            
-        except Exception as e:
-            st.error(f"Erro no banco: {e}")
-            print(f"!!! ERRO NO BANCO: {traceback.format_exc()}")
+        # Tabela formatada
+        st.dataframe(
+            df[['nome', 'marca', 'categoria', 'estoque_atual', 'preco_venda', 'fator_conversao']], 
+            use_container_width=True, 
+            hide_index=True
+        )
     else:
-        st.warning("O nome é obrigatório.")
+        st.info("Nenhum produto cadastrado. Vá ao Financeiro para realizar a primeira compra.")
+except Exception as e:
+    st.error(f"Erro ao carregar inventário: {e}")
 
 st.divider()
 
-# --- 2. LISTAGEM ---
-st.subheader("📋 Produtos em Inventário")
-try:
-    with conn.session as s:
-        # Query atualizada para mostrar marca e custo na tabela
-        df = pd.read_sql(text("SELECT nome, marca, categoria, preco_custo, preco_venda, estoque_atual FROM produtos ORDER BY nome ASC"), s.bind)
-    
+# --- 2. ÁREA DE AJUSTE RÁPIDO ---
+with st.expander("🛠️ Ajustar Preços ou Fator de Conversão"):
     if not df.empty:
-        st.dataframe(df, use_container_width=True, hide_index=True)
-    else:
-        st.info("Nenhum produto cadastrado.")
-except Exception as e:
-    st.error(f"Erro ao carregar: {e}")
+        prod_edit = st.selectbox("Selecione o produto para editar", df['nome'].tolist())
+        detalhes = df[df['nome'] == prod_edit].iloc[0]
+        
+        col1, col2, col3 = st.columns(3)
+        novo_preco = col1.number_input("Novo Preço de Venda (R$)", value=float(detalhes['preco_venda']), step=0.5)
+        novo_fator = col2.number_input("Fator de Conversão (Qtd por Caixa)", value=int(detalhes['fator_conversao']), min_value=1)
+        novo_minimo = col3.number_input("Estoque Mínimo", value=int(detalhes['estoque_minimo']), min_value=0)
+        
+        if st.button("Salvar Alterações", type="primary"):
+            try:
+                with conn.session as s:
+                    s.execute(text("""
+                        UPDATE produtos 
+                        SET preco_venda = :pv, fator_conversao = :fc, estoque_minimo = :em 
+                        WHERE id = :id
+                    """), {"pv": novo_preco, "fc": novo_fator, "em": novo_minimo, "id": detalhes['id']})
+                    s.commit()
+                st.success("Produto atualizado!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao salvar: {e}")
