@@ -73,7 +73,6 @@ with tab2:
                     # --- LISTAGEM DO CONSUMO ATUAL ---
                     st.divider()
                     with conn.session as s:
-                        # Query agora traz o ID da linha para podermos excluir especificamente
                         itens_consumidos = pd.read_sql(
                             text("""
                                 SELECT i.id as item_id, i.produto_id, p.nome, i.quantidade, i.preco_unitario, (i.quantidade * i.preco_unitario) as subtotal
@@ -85,12 +84,10 @@ with tab2:
                         )
                     
                     if not itens_consumidos.empty:
-                        # Exibição visual com botão de excluir por linha
                         for _, row in itens_consumidos.iterrows():
                             col_item, col_excluir = st.columns([4, 1])
                             col_item.write(f"{row['quantidade']}x {row['nome']} - R$ {row['subtotal']:.2f}")
                             
-                            # Confirmação de exclusão Sim/Não
                             with col_excluir.popover("🗑️", help="Excluir este item"):
                                 st.warning("Deseja excluir?")
                                 if st.button("Sim, excluir", key=f"del_{row['item_id']}", type="primary"):
@@ -105,8 +102,17 @@ with tab2:
                         total_conta = itens_consumidos['subtotal'].sum()
                         st.subheader(f"Total: R$ {total_conta:.2f}")
                         
-                        # --- BOTÃO DE FECHAMENTO (POPOVER) ---
+                        # --- BOTÃO DE FECHAMENTO COM CALCULADORA ---
                         with st.popover(f"Finalizar e Cobrar R$ {total_conta:.2f}", width='stretch'):
+                            # Calculadora de Divisão
+                            st.write("🔢 **Calculadora de Divisão**")
+                            num_pess = st.number_input("Dividir por quantas pessoas?", min_value=1, value=1, step=1, key=f"div_{comanda['id']}")
+                            if num_pess > 1:
+                                v_pess = total_conta / num_pess
+                                st.info(f"Cada pessoa paga: **R$ {v_pess:.2f}**")
+                            
+                            st.divider()
+                            
                             metodo_pagto = st.selectbox("Forma de Pagamento", ["Dinheiro", "Pix", "Débito", "Crédito"], key=f"met_{comanda['id']}")
                             
                             if st.button("Confirmar Pagamento", key=f"conf_{comanda['id']}", type="primary", width='stretch'):
