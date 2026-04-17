@@ -30,6 +30,7 @@ with tab1:
                 if numero:
                     id_cliente = None
                     if cliente_sel != "Nenhum":
+                        # Mantemos o ID como UUID original
                         id_cliente = clientes_df[clientes_df['nome'] == cliente_sel].iloc[0]['id']
                     
                     try:
@@ -42,16 +43,20 @@ with tab1:
                         st.success(f"Comanda '{numero}' aberta!")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Erro: {e}")
+                        st.error(f"Erro ao abrir comanda: {e}")
+                else:
+                    st.warning("O número ou identificador é obrigatório.")
     except Exception as e:
-        st.error(f"Erro ao carregar clientes: {e}")
+        st.error(f"Erro ao carregar lista de clientes: {e}")
 
 # --- TAB 2: GERENCIAR COMANDAS ATIVAS ---
 with tab2:
     try:
         with conn.session as s:
+            # Busca produtos para o lançamento
             prods_df = pd.read_sql(text("SELECT id, nome, preco_venda FROM produtos WHERE estoque_atual > 0 ORDER BY nome"), s.bind)
-            # Query traz o nome do cliente vinculado se houver
+            
+            # Query traz o nome do cliente vinculado via LEFT JOIN
             comandas_df = pd.read_sql(text("""
                 SELECT c.id, c.numero_comanda, cl.nome as nome_cliente, c.cliente_id 
                 FROM comandas c 
@@ -63,11 +68,12 @@ with tab2:
             st.info("Nenhuma comanda aberta.")
         else:
             for _, comanda in comandas_df.iterrows():
-                label = f"📌 {comanda['numero_comanda']}"
+                # Formata o título do expander com o nome do cliente se existir
+                label_comanda = f"📌 {comanda['numero_comanda']}"
                 if comanda['nome_cliente']:
-                    label += f" - 👤 {comanda['nome_cliente']}"
+                    label_comanda += f" - 👤 {comanda['nome_cliente']}"
                 
-                with st.expander(label):
+                with st.expander(label_comanda):
                     # --- LANÇAMENTO DE ITENS ---
                     st.write("**Lançar Consumo**")
                     c1, c2, c3 = st.columns([3, 1, 1])
@@ -86,9 +92,9 @@ with tab2:
                             st.toast("Item adicionado!")
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Erro ao lançar: {e}")
+                            st.error(f"Erro ao lançar item: {e}")
 
-                    # --- LISTAGEM E EXCLUSÃO ---
+                    # --- LISTAGEM DO CONSUMO E EXCLUSÃO ---
                     st.divider()
                     with conn.session as s:
                         itens_consumidos = pd.read_sql(
@@ -102,11 +108,12 @@ with tab2:
                     
                     if not itens_consumidos.empty:
                         for _, row in itens_consumidos.iterrows():
-                            col_i, col_e = st.columns([4, 1])
-                            col_i.write(f"{row['quantidade']}x {row['nome']} - R$ {row['subtotal']:.2f}")
-                            with col_e.popover("🗑️"):
-                                st.warning("Excluir?")
-                                if st.button("Sim", key=f"del_{row['item_id']}", type="primary"):
+                            col_item, col_excluir = st.columns([4, 1])
+                            col_item.write(f"{row['quantidade']}x {row['nome']} - R$ {row['subtotal']:.2f}")
+                            
+                            with col_excluir.popover("🗑️"):
+                                st.warning("Deseja excluir?")
+                                if st.button("Sim, excluir", key=f"del_{row['item_id']}", type="primary"):
                                     with conn.session as s:
                                         s.execute(text("DELETE FROM itens_comanda WHERE id = :id"), {"id": row['item_id']})
                                         s.commit()
@@ -115,15 +122,16 @@ with tab2:
                         total_conta = float(itens_consumidos['subtotal'].sum())
                         st.subheader(f"Total: R$ {total_conta:.2f}")
                         
-                        # --- FINALIZAÇÃO (CLASSIFICAÇÃO LOUNGE) ---
-                        with st.popover(f"Finalizar R$ {total_conta:.2f}", width='stretch'):
-                            st.write("🔢 **Divisão**")
-                            num_pess = st.number_input("Pessoas", min_value=1, value=1, key=f"div_{comanda['id']}")
+                        # --- FECHAMENTO E COBRANÇA ---
+                        with st.popover(f"Finalizar e Cobrar R$ {total_conta:.2f}", width='stretch'):
+                            st.write("🔢 **Calculadora de Divisão**")
+                            num_pess = st.number_input("Dividir por quantas pessoas?", min_value=1, value=1, step=1, key=f"div_{comanda['id']}")
                             if num_pess > 1:
-                                st.info(f"R$ {total_conta/num_pess:.2f} por pessoa")
+                                valor_por_pessoa = total_conta / num_pess
+                                st.info(f"Cada pessoa paga: **R$ {valor_por_pessoa:.2f}**")
                             
                             st.divider()
-                            metodo = st.selectbox("Pagamento", ["Dinheiro", "Pix", "Débito", "Crédito"], key=f"met_{comanda['id']}")
+                            metodo = st.selectbox("Forma de Pagamento", ["Dinheiro", "Pix", "Débito", "Crédito"], key=f"met_{comanda['id']}")
                             
                             if st.button("Confirmar Pagamento", key=f"conf_{comanda['id']}", type="primary", width='stretch'):
                                 try:
@@ -132,28 +140,55 @@ with tab2:
                                     v_liq = float(total_conta - v_taxa)
 
                                     with conn.session as s:
-                                        # 1. Registrar Venda (Sempre como 'Lounge')
+                                        # 1. Registrar Venda (Sempre classificada como 'Lounge')
                                         res = s.execute(
                                             text("""
                                                 INSERT INTO vendas (valor_bruto, metodo_pagamento, taxa_maquininha, valor_liquido, canal_venda, cliente_id)
                                                 VALUES (:bruto, :metodo, :taxa, :liquido, 'Lounge', :c_id)
                                                 RETURNING id
                                             """),
-                                            {"bruto": total_conta, "metodo": metodo, "taxa": v_taxa, "liquido": v_liq, "c_id": comanda['cliente_id']}
+                                            {
+                                                "bruto": total_conta, 
+                                                "metodo": metodo, 
+                                                "taxa": v_taxa, 
+                                                "liquido": v_liq, 
+                                                "c_id": comanda['cliente_id']
+                                            }
                                         )
                                         venda_id = res.fetchone()[0]
 
-                                        # 2. Itens, Estoque e Fechamento
-                                        s.execute(text("INSERT INTO itens_venda (venda_id, produto_id, quantidade, preco_unitario) SELECT :v, produto_id, quantidade, preco_unitario FROM itens_comanda WHERE comanda_id = :c"), {"v": venda_id, "c": comanda['id']})
-                                        s.execute(text("UPDATE produtos SET estoque_atual = estoque_atual - ic.quantidade FROM itens_comanda ic WHERE produtos.id = ic.produto_id AND ic.comanda_id = :c"), {"c": comanda['id']})
-                                        s.execute(text("UPDATE comandas SET status = 'Fechada' WHERE id = :c"), {"c": comanda['id']})
+                                        # 2. Mover Itens para Itens_Venda
+                                        s.execute(
+                                            text("""
+                                                INSERT INTO itens_venda (venda_id, produto_id, quantidade, preco_unitario)
+                                                SELECT :v_id, produto_id, quantidade, preco_unitario 
+                                                FROM itens_comanda WHERE comanda_id = :c_id
+                                            """),
+                                            {"v_id": venda_id, "c_id": comanda['id']}
+                                        )
+
+                                        # 3. Baixar Estoque
+                                        s.execute(
+                                            text("""
+                                                UPDATE produtos 
+                                                SET estoque_atual = estoque_atual - ic.quantidade
+                                                FROM itens_comanda ic
+                                                WHERE produtos.id = ic.produto_id AND ic.comanda_id = :c_id
+                                            """),
+                                            {"c_id": comanda['id']}
+                                        )
+
+                                        # 4. Fechar Comanda
+                                        s.execute(text("UPDATE comandas SET status = 'Fechada' WHERE id = :c_id"), {"c_id": comanda['id']})
+                                        
                                         s.commit()
                                     
-                                    st.success("Venda Lounge registrada!")
+                                    st.success("Venda Lounge registrada com sucesso!")
                                     st.rerun()
                                 except Exception as e:
-                                    st.error(f"Erro: {e}")
+                                    st.error(f"Erro ao finalizar venda: {e}")
                     else:
-                        st.write("Vazia.")
+                        st.write("Comanda vazia.")
+
     except Exception as e:
-        st.error(f"Erro: {e}")
+        st.error(f"Erro ao processar comandas: {e}")
