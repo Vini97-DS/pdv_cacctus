@@ -2,108 +2,117 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import text
 
+st.set_page_config(page_title="Vendas de Balcão", layout="wide")
+conn = st.connection("postgresql", type="sql")
+
 # --- SIDEBAR COM LOGO ---
 st.sidebar.image("free_icon_1 (1).svg", width=100)
 st.sidebar.divider()
 
+st.title("🛒 Venda de Balcão / Carrinho")
 
-st.set_page_config(page_title="Ponto de Venda", layout="wide")
-conn = st.connection("postgresql", type="sql")
+# --- 1. INICIALIZAÇÃO DO CARRINHO (MEMÓRIA) ---
+if 'carrinho' not in st.session_state:
+    st.session_state.carrinho = []
 
-st.title("🛒 Ponto de Venda")
-
-# --- 1. CARREGAR DADOS ---
+# --- 2. SELEÇÃO DE PRODUTOS ---
 try:
     with conn.session as s:
-        produtos_df = pd.read_sql(
-            text("SELECT id, nome, preco_venda, estoque_atual FROM produtos WHERE estoque_atual > 0 ORDER BY nome ASC"),
-            s.bind
-        )
+        prods_df = pd.read_sql(text("SELECT id, nome, preco_venda, estoque_atual FROM produtos WHERE estoque_atual > 0 ORDER BY nome"), s.bind)
+
+    col_prod, col_qtd, col_add = st.columns([3, 1, 1])
+
+    with col_prod:
+        p_selecionado = st.selectbox("Escolha o Produto", prods_df['nome'].tolist())
+    with col_qtd:
+        qtd_venda = st.number_input("Qtd", min_value=1, value=1)
+    with col_add:
+        st.write(" ") # Alinhamento
+        if st.button("Adicionar", use_container_width=True):
+            detalhes = prods_df[prods_df['nome'] == p_selecionado].iloc[0]
+            # Adiciona ao carrinho na memória
+            st.session_state.carrinho.append({
+                "id": detalhes['id'],
+                "nome": detalhes['nome'],
+                "qtd": qtd_venda,
+                "preco": float(detalhes['preco_venda']),
+                "subtotal": float(detalhes['preco_venda'] * qtd_venda)
+            })
+            st.toast(f"{p_selecionado} adicionado!")
+
 except Exception as e:
     st.error(f"Erro ao carregar produtos: {e}")
-    produtos_df = pd.DataFrame()
 
-TAXAS = {"Dinheiro": 0.0, "Pix": 0.0, "Débito": 0.019, "Crédito": 0.045}
-
-if produtos_df.empty:
-    st.warning("Sem produtos disponíveis em estoque para venda.")
-else:
-    # --- 2. FORMULÁRIO DE VENDA ---
-    with st.form("form_venda", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        produto_nome = col1.selectbox("Selecione o Produto", produtos_df['nome'].tolist())
-        metodo_pagto = col2.selectbox("Forma de Pagamento", list(TAXAS.keys()))
-
-        col3, col4 = st.columns(2)
-        quantidade = col3.number_input("Quantidade", min_value=1, step=1)
-        
-        prod_row = produtos_df[produtos_df['nome'] == produto_nome].iloc[0]
-        total_bruto = float(prod_row['preco_venda']) * quantidade
-        taxa_valor = total_bruto * TAXAS[metodo_pagto]
-        total_liq = total_bruto - taxa_valor
-
-        st.info(f"💰 **Total Bruto: R$ {total_bruto:.2f}** | Taxa: R$ {taxa_valor:.2f} | **Líquido: R$ {total_liq:.2f}**")
-
-        if st.form_submit_button("Confirmar Venda", width='stretch'):
-            if quantidade > int(prod_row['estoque_atual']):
-                st.error(f"Estoque insuficiente! Disponível: {int(prod_row['estoque_atual'])}")
-            else:
-                try:
-                    with conn.session as s:
-                        # PASSO A: Inserir na tabela 'vendas' e capturar o ID gerado
-                        result = s.execute(
-                            text("""
-                                INSERT INTO vendas (valor_bruto, metodo_pagamento, taxa_maquininha, valor_liquido)
-                                VALUES (:bruto, :metodo, :taxa, :liquido)
-                                RETURNING id
-                            """),
-                            {
-                                "bruto": total_bruto,
-                                "metodo": metodo_pagto,
-                                "taxa": taxa_valor,
-                                "liquido": total_liq
-                            }
-                        )
-                        # Captura o UUID da venda recém-criada
-                        venda_id = result.fetchone()[0]
-
-                        # PASSO B: Inserir na tabela 'itens_venda' usando o venda_id
-                        s.execute(
-                            text("""
-                                INSERT INTO itens_venda (venda_id, produto_id, quantidade, preco_unitario)
-                                VALUES (:v_id, :p_id, :q, :preco)
-                            """),
-                            {
-                                "v_id": venda_id,
-                                "p_id": prod_row['id'],
-                                "q": quantidade,
-                                "preco": float(prod_row['preco_venda'])
-                            }
-                        )
-
-                        # PASSO C: Atualizar estoque do produto
-                        s.execute(
-                            text("UPDATE produtos SET estoque_atual = estoque_atual - :q WHERE id = :id"),
-                            {"q": quantidade, "id": prod_row['id']}
-                        )
-                        
-                        s.commit()
-                    
-                    st.success(f"Venda de {quantidade}x {produto_nome} realizada com sucesso!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao processar venda: {e}")
-
-# --- 3. HISTÓRICO RECENTE ---
 st.divider()
-st.subheader("📋 Últimas 5 Vendas")
-try:
-    with conn.session as s:
-        historico = pd.read_sql(
-            text("SELECT data_venda, valor_bruto, metodo_pagamento, valor_liquido FROM vendas ORDER BY data_venda DESC LIMIT 5"),
-            s.bind
-        )
-    if not historico.empty:
-        st.dataframe(historico, width='stretch')
-except Exception as e:
-    st.error(f"Erro ao carregar histórico: {e}")
+
+# --- 3. EXIBIÇÃO DO CARRINHO ---
+if st.session_state.carrinho:
+    col_lista, col_resumo = st.columns([2, 1])
+
+    with col_lista:
+        st.subheader("Itens no Carrinho")
+        df_carrinho = pd.DataFrame(st.session_state.carrinho)
+        
+        # Botão para limpar carrinho
+        if st.button("Esvaziar Carrinho"):
+            st.session_state.carrinho = []
+            st.rerun()
+
+        # Exibe os itens de forma limpa
+        for idx, item in enumerate(st.session_state.carrinho):
+            c1, c2, c3 = st.columns([3, 1, 1])
+            c1.write(f"**{item['nome']}**")
+            c2.write(f"{item['qtd']}x R$ {item['preco']:.2f}")
+            if c3.button("Remover", key=f"rem_{idx}"):
+                st.session_state.carrinho.pop(idx)
+                st.rerun()
+
+    with col_resumo:
+        st.subheader("Finalização")
+        total_venda = df_carrinho['subtotal'].sum()
+        st.write(f"### Total: R$ {total_venda:.2f}")
+        
+        # --- CAMPOS EXTRAS (VIP) ---
+        canal = st.radio("Canal de Venda", ["Balcão", "Delivery"], horizontal=True)
+        metodo = st.selectbox("Forma de Pagamento", ["Dinheiro", "Pix", "Débito", "Crédito"])
+        
+        if st.button("Confirmar e Finalizar", type="primary", use_container_width=True):
+            try:
+                # Lógica de taxas (usando a sua padrão)
+                taxas_map = {"Dinheiro": 0.0, "Pix": 0.0, "Débito": 0.019, "Crédito": 0.045}
+                v_taxa = float(total_venda * taxas_map[metodo])
+                v_liq = float(total_venda - v_taxa)
+
+                with conn.session as s:
+                    # 1. Criar a Venda (incluindo canal_venda)
+                    res = s.execute(
+                        text("""
+                            INSERT INTO vendas (valor_bruto, metodo_pagamento, taxa_maquininha, valor_liquido, canal_venda)
+                            VALUES (:bruto, :metodo, :taxa, :liquido, :canal)
+                            RETURNING id
+                        """),
+                        {"bruto": total_venda, "metodo": metodo, "taxa": v_taxa, "liquido": v_liq, "canal": canal}
+                    )
+                    venda_id = res.fetchone()[0]
+
+                    # 2. Inserir itens e baixar estoque
+                    for item in st.session_state.carrinho:
+                        s.execute(
+                            text("INSERT INTO itens_venda (venda_id, produto_id, quantidade, preco_unitario) VALUES (:v, :p, :q, :pr)"),
+                            {"v": venda_id, "p": item['id'], "q": item['qtd'], "pr": item['preco']}
+                        )
+                        s.execute(
+                            text("UPDATE produtos SET estoque_atual = estoque_atual - :q WHERE id = :p"),
+                            {"q": item['qtd'], "p": item['id']}
+                        )
+                    
+                    s.commit()
+                
+                st.success("Venda realizada com sucesso!")
+                st.session_state.carrinho = [] # Limpa o carrinho
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao finalizar: {e}")
+
+else:
+    st.info("O carrinho está vazio. Adicione produtos acima.")
