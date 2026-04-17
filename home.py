@@ -72,6 +72,18 @@ try:
         """)
         df_top_prod = pd.read_sql(query_top_prod, s.bind)
 
+        # NOVO: Ranking de Clientes Fiéis (Frequência)
+        query_fidelidade = text(f"""
+            SELECT c.nome, COUNT(v.id) as frequencia
+            FROM vendas v
+            JOIN clientes c ON v.cliente_id = c.id
+            WHERE v.data_venda >= CURRENT_DATE - INTERVAL '{dias} days'
+            GROUP BY c.nome
+            ORDER BY frequencia DESC
+            LIMIT 5
+        """)
+        df_fidelidade = pd.read_sql(query_fidelidade, s.bind)
+
 # --- 2. EXIBIÇÃO DE MÉTRICAS ---
     m1, m2, m3, m4 = st.columns(4)
     bruto = df_finc['bruto'].iloc[0] or 0
@@ -102,7 +114,7 @@ try:
 
     st.divider()
 
-# --- 4. SEGUNDA LINHA DE INSIGHTS ---
+# --- 4. SEGUNDA LINHA DE INSIGHTS E RANKINGS ---
     col_c, col_d = st.columns(2)
 
     with col_c:
@@ -113,13 +125,24 @@ try:
             st.plotly_chart(fig_top, use_container_width=True)
     
     with col_d:
-        st.subheader("ℹ️ Insights de Consultoria")
-        st.info(f"""
-        **Resumo do Período:**
-        * O canal **{df_canais.loc[df_canais['total'].idxmax(), 'canal_venda'] if not df_canais.empty else 'N/A'}** é o mais rentável.
-        * Você atraiu **{novos_cli}** novos clientes potenciais para fidelizar.
-        * A taxa média de perda por maquininha é de **{((bruto-liquido)/bruto*100) if bruto > 0 else 0:.1f}%**.
-        """)
+        st.subheader("💎 Clientes Fiéis (Ranking)")
+        if not df_fidelidade.empty:
+            fig_fid = px.bar(df_fidelidade, x='frequencia', y='nome', orientation='h',
+                             color='frequencia', color_continuous_scale='Blues')
+            st.plotly_chart(fig_fid, use_container_width=True)
+        else:
+            st.info("Vincule clientes às vendas para gerar o ranking.")
+
+    st.divider()
+
+# --- 5. BLOCO DE INSIGHTS DE CONSULTORIA ---
+    st.subheader("ℹ️ Insights de Consultoria")
+    st.info(f"""
+    **Resumo do Período:**
+    * O canal **{df_canais.loc[df_canais['total'].idxmax(), 'canal_venda'] if not df_canais.empty else 'N/A'}** é o mais rentável.
+    * Você atraiu **{novos_cli}** novos clientes potenciais para fidelizar.
+    * A taxa média de perda por maquininha é de **{((bruto-liquido)/bruto*100) if bruto > 0 else 0:.1f}%**.
+    """)
 
 except Exception as e:
     st.error(f"Erro ao carregar o Dashboard: {e}")
