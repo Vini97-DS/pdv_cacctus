@@ -19,6 +19,8 @@ if 'carrinho' not in st.session_state:
 try:
     with conn.session as s:
         prods_df = pd.read_sql(text("SELECT id, nome, preco_venda, estoque_atual FROM produtos WHERE estoque_atual > 0 ORDER BY nome"), s.bind)
+        # Busca clientes para o seletor
+        clientes_df = pd.read_sql(text("SELECT id, nome FROM clientes ORDER BY nome"), s.bind)
 
     col_prod, col_qtd, col_add = st.columns([3, 1, 1])
 
@@ -73,6 +75,14 @@ if st.session_state.carrinho:
         st.write(f"### Total: R$ {total_venda:.2f}")
         
         # --- CAMPOS EXTRAS (VIP) ---
+        # Seletor de Cliente adicionado aqui
+        cliente_opcoes = ["Nenhum"] + clientes_df['nome'].tolist()
+        cliente_sel = st.selectbox("Vincular Cliente (Opcional)", cliente_opcoes)
+        
+        id_cliente_final = None
+        if cliente_sel != "Nenhum":
+            id_cliente_final = int(clientes_df[clientes_df['nome'] == cliente_sel].iloc[0]['id'])
+
         canal = st.radio("Canal de Venda", ["Balcão", "Delivery"], horizontal=True)
         metodo = st.selectbox("Forma de Pagamento", ["Dinheiro", "Pix", "Débito", "Crédito"])
         
@@ -84,14 +94,21 @@ if st.session_state.carrinho:
                 v_liq = float(total_venda - v_taxa)
 
                 with conn.session as s:
-                    # 1. Criar a Venda (incluindo canal_venda)
+                    # 1. Criar a Venda (incluindo canal_venda e cliente_id)
                     res = s.execute(
                         text("""
-                            INSERT INTO vendas (valor_bruto, metodo_pagamento, taxa_maquininha, valor_liquido, canal_venda)
-                            VALUES (:bruto, :metodo, :taxa, :liquido, :canal)
+                            INSERT INTO vendas (valor_bruto, metodo_pagamento, taxa_maquininha, valor_liquido, canal_venda, cliente_id)
+                            VALUES (:bruto, :metodo, :taxa, :liquido, :canal, :c_id)
                             RETURNING id
                         """),
-                        {"bruto": total_venda, "metodo": metodo, "taxa": v_taxa, "liquido": v_liq, "canal": canal}
+                        {
+                            "bruto": total_venda, 
+                            "metodo": metodo, 
+                            "taxa": v_taxa, 
+                            "liquido": v_liq, 
+                            "canal": canal,
+                            "c_id": id_cliente_final
+                        }
                     )
                     venda_id = res.fetchone()[0]
 
