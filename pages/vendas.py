@@ -34,7 +34,7 @@ try:
             detalhes = prods_df[prods_df['nome'] == p_selecionado].iloc[0]
             # Adiciona ao carrinho na memória
             st.session_state.carrinho.append({
-                "id": detalhes['id'],
+                "id": detalhes['id'], # Mantemos o ID original (UUID ou Numérico)
                 "nome": detalhes['nome'],
                 "qtd": qtd_venda,
                 "preco": float(detalhes['preco_venda']),
@@ -71,7 +71,7 @@ if st.session_state.carrinho:
 
     with col_resumo:
         st.subheader("Finalização")
-        # Conversão explícita para float nativo do Python para evitar erro de np.float64
+        # Conversão para float nativo para evitar erro de np.float64
         total_venda = float(df_carrinho['subtotal'].sum())
         st.write(f"### Total: R$ {total_venda:.2f}")
         
@@ -81,55 +81,13 @@ if st.session_state.carrinho:
         
         id_cliente_final = None
         if cliente_sel != "Nenhum":
-            id_cliente_final = int(clientes_df[clientes_df['nome'] == cliente_sel].iloc[0]['id'])
+            # Pegamos o ID original sem forçar int() para suportar UUID
+            id_cliente_final = clientes_df[clientes_df['nome'] == cliente_sel].iloc[0]['id']
 
         canal = st.radio("Canal de Venda", ["Balcão", "Delivery"], horizontal=True)
         metodo = st.selectbox("Forma de Pagamento", ["Dinheiro", "Pix", "Débito", "Crédito"])
         
         if st.button("Confirmar e Finalizar", type="primary", use_container_width=True):
             try:
-                # Lógica de taxas com conversão para float nativo
                 taxas_map = {"Dinheiro": 0.0, "Pix": 0.0, "Débito": 0.019, "Crédito": 0.045}
                 v_taxa = float(total_venda * taxas_map[metodo])
-                v_liq = float(total_venda - v_taxa)
-
-                with conn.session as s:
-                    # 1. Criar a Venda (incluindo canal_venda e cliente_id)
-                    res = s.execute(
-                        text("""
-                            INSERT INTO vendas (valor_bruto, metodo_pagamento, taxa_maquininha, valor_liquido, canal_venda, cliente_id)
-                            VALUES (:bruto, :metodo, :taxa, :liquido, :canal, :c_id)
-                            RETURNING id
-                        """),
-                        {
-                            "bruto": total_venda, 
-                            "metodo": metodo, 
-                            "taxa": v_taxa, 
-                            "liquido": v_liq, 
-                            "canal": canal,
-                            "c_id": id_cliente_final
-                        }
-                    )
-                    venda_id = res.fetchone()[0]
-
-                    # 2. Inserir itens e baixar estoque
-                    for item in st.session_state.carrinho:
-                        s.execute(
-                            text("INSERT INTO itens_venda (venda_id, produto_id, quantidade, preco_unitario) VALUES (:v, :p, :q, :pr)"),
-                            {"v": venda_id, "p": int(item['id']), "q": int(item['qtd']), "pr": float(item['preco'])}
-                        )
-                        s.execute(
-                            text("UPDATE produtos SET estoque_atual = estoque_atual - :q WHERE id = :p"),
-                            {"q": int(item['qtd']), "p": int(item['id'])}
-                        )
-                    
-                    s.commit()
-                
-                st.success("Venda realizada com sucesso!")
-                st.session_state.carrinho = [] # Limpa o carrinho
-                st.rerun()
-            except Exception as e:
-                st.error(f"Erro ao finalizar: {e}")
-
-else:
-    st.info("O carrinho está vazio. Adicione produtos acima.")
