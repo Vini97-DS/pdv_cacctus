@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import uuid
 from sqlalchemy import text
 
 st.set_page_config(page_title="Gestão de Estoque", layout="wide")
@@ -71,11 +72,11 @@ with st.expander("✏️ Editar Produto"):
                         UPDATE produtos 
                         SET nome = :nome, marca = :marca, estoque_atual = :ea,
                             preco_venda = :pv, preco_custo = :pc, estoque_minimo = :em
-                        WHERE id = :id::uuid
+                        WHERE id = :id
                     """), {
                         "nome": novo_nome, "marca": nova_marca, "ea": nova_qtd,
                         "pv": novo_preco, "pc": novo_custo, "em": novo_minimo,
-                        "id": str(detalhes['id'])
+                        "id": uuid.UUID(str(detalhes['id']))
                     })
                     s.commit()
                 st.success(f"Produto '{novo_nome}' atualizado com sucesso!")
@@ -98,7 +99,7 @@ with st.expander("🗑️ Excluir Produto"):
         if st.button("🗑️ Excluir Produto", type="primary", disabled=not confirmar, use_container_width=True):
             try:
                 with conn.session as s:
-                    s.execute(text("DELETE FROM produtos WHERE id = :id::uuid"), {"id": str(detalhes_del['id'])})
+                    s.execute(text("DELETE FROM produtos WHERE id = :id"), {"id": uuid.UUID(str(detalhes_del['id']))})
                     s.commit()
                 st.success(f"Produto '{prod_del}' excluído com sucesso!")
                 st.rerun()
