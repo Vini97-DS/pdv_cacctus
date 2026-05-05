@@ -14,9 +14,8 @@ st.title("📦 Inventário e Preços")
 # --- 1. TABELA DE PRODUTOS ---
 try:
     with conn.session as s:
-        # Puxamos apenas o necessário para a visualização operacional
         df = pd.read_sql(text("""
-            SELECT id, nome, marca, categoria, estoque_atual, estoque_minimo, preco_venda 
+            SELECT id, nome, marca, categoria, estoque_atual, estoque_minimo, preco_venda, preco_custo
             FROM produtos ORDER BY nome ASC
         """), s.bind)
     
@@ -28,7 +27,7 @@ try:
 
         # Tabela formatada para o usuário
         st.dataframe(
-            df[['nome', 'marca', 'categoria', 'estoque_atual', 'preco_venda']], 
+            df[['nome', 'marca', 'categoria', 'estoque_atual', 'preco_venda', 'preco_custo']], 
             use_container_width=True, 
             hide_index=True,
             column_config={
@@ -36,7 +35,8 @@ try:
                 "marca": "Marca",
                 "categoria": "Categoria",
                 "estoque_atual": "Qtd em Estoque",
-                "preco_venda": st.column_config.NumberColumn("Preço de Venda", format="R$ %.2f")
+                "preco_venda": st.column_config.NumberColumn("Preço de Venda", format="R$ %.2f"),
+                "preco_custo": st.column_config.NumberColumn("Preço de Custo", format="R$ %.2f"),
             }
         )
     else:
@@ -46,26 +46,61 @@ except Exception as e:
 
 st.divider()
 
-# --- 2. ÁREA DE AJUSTE RÁPIDO ---
-with st.expander("🛠️ Ajustar Preço de Venda ou Estoque Mínimo"):
+# --- 2. ÁREA DE EDIÇÃO COMPLETA ---
+with st.expander("✏️ Editar Produto"):
     if not df.empty:
-        prod_edit = st.selectbox("Selecione o produto", df['nome'].tolist())
+        prod_edit = st.selectbox("Selecione o produto", df['nome'].tolist(), key="edit_select")
         detalhes = df[df['nome'] == prod_edit].iloc[0]
         
         col1, col2 = st.columns(2)
-        novo_preco = col1.number_input("Novo Preço de Venda (R$)", value=float(detalhes['preco_venda']), step=0.5)
-        novo_minimo = col2.number_input("Alerta de Estoque Mínimo", value=int(detalhes['estoque_minimo']), min_value=0)
+        novo_nome     = col1.text_input("Nome do Produto", value=str(detalhes['nome']))
+        nova_marca    = col2.text_input("Marca", value=str(detalhes['marca']))
+
+        col3, col4 = st.columns(2)
+        nova_qtd      = col3.number_input("Quantidade em Estoque", value=int(detalhes['estoque_atual']), min_value=0)
+        novo_minimo   = col4.number_input("Alerta de Estoque Mínimo", value=int(detalhes['estoque_minimo']), min_value=0)
+
+        col5, col6 = st.columns(2)
+        novo_preco    = col5.number_input("Preço de Venda (R$)", value=float(detalhes['preco_venda']), step=0.5, min_value=0.0)
+        novo_custo    = col6.number_input("Preço de Custo (R$)", value=float(detalhes['preco_custo']) if detalhes['preco_custo'] is not None else 0.0, step=0.5, min_value=0.0)
         
-        if st.button("Atualizar Produto", type="primary", use_container_width=True):
+        if st.button("💾 Salvar Alterações", type="primary", use_container_width=True):
             try:
                 with conn.session as s:
                     s.execute(text("""
                         UPDATE produtos 
-                        SET preco_venda = :pv, estoque_minimo = :em 
+                        SET nome = :nome, marca = :marca, estoque_atual = :ea,
+                            preco_venda = :pv, preco_custo = :pc, estoque_minimo = :em
                         WHERE id = :id
-                    """), {"pv": novo_preco, "em": novo_minimo, "id": detalhes['id']})
+                    """), {
+                        "nome": novo_nome, "marca": nova_marca, "ea": nova_qtd,
+                        "pv": novo_preco, "pc": novo_custo, "em": novo_minimo,
+                        "id": int(detalhes['id'])
+                    })
                     s.commit()
-                st.success(f"Alterações em '{prod_edit}' salvas!")
+                st.success(f"Produto '{novo_nome}' atualizado com sucesso!")
                 st.rerun()
             except Exception as e:
                 st.error(f"Erro ao salvar: {e}")
+
+st.divider()
+
+# --- 3. ÁREA DE EXCLUSÃO DE PRODUTO ---
+with st.expander("🗑️ Excluir Produto"):
+    if not df.empty:
+        prod_del = st.selectbox("Selecione o produto a excluir", df['nome'].tolist(), key="del_select")
+        detalhes_del = df[df['nome'] == prod_del].iloc[0]
+
+        st.warning(f"Você está prestes a excluir **{prod_del}** permanentemente. Essa ação não pode ser desfeita.")
+
+        confirmar = st.checkbox("Confirmo que desejo excluir este produto")
+
+        if st.button("🗑️ Excluir Produto", type="primary", disabled=not confirmar, use_container_width=True):
+            try:
+                with conn.session as s:
+                    s.execute(text("DELETE FROM produtos WHERE id = :id"), {"id": int(detalhes_del['id'])})
+                    s.commit()
+                st.success(f"Produto '{prod_del}' excluído com sucesso!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao excluir: {e}")
